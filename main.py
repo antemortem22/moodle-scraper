@@ -5,6 +5,7 @@ from scraper.browser import open_moodle
 from scraper.courses import get_courses
 from scraper.errors import MoodleError
 from scraper.sections import get_sections
+from scraper.activities import get_activities
 
 
 def select_course(courses: list[Course]) -> Course | None:
@@ -63,6 +64,18 @@ def main() -> int:
                     print("\nSeleccionadas:\n")
                 for section in selected:
                     print(f"- {section.name}")
+                if selected:
+                    activities = get_activities(page, course, selected)
+                    print(f"\nCurso: {course.name}")
+                    for section in selected:
+                        print(f"\n{section.name}\n")
+                        items = [activity for activity in activities if activity.section == section]
+                        if not items:
+                            print("(sin actividades)")
+                        for activity in items:
+                            kind = "PDF/RESOURCE" if activity.file_format == "pdf" else activity.type.upper()
+                            status = "" if activity.is_available else " [RESTRINGIDA/NO HABILITADA]"
+                            print(f"[{kind}] {activity.title}{status}")
             input("\nPresioná Enter para cerrar el navegador: ")
         return 0
     except MoodleError as exc:

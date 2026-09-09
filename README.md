@@ -2,7 +2,7 @@
 
 Herramienta en Python para acceder a una cuenta de Moodle, reutilizar una sesión autenticada y, progresivamente, exportar cursos y contenido disponible para el usuario.
 
-Actualmente están implementadas la autenticación manual y la lectura de cursos y secciones mediante Playwright. El resto del alcance previsto es trabajo futuro.
+Actualmente están implementadas la autenticación manual, la selección de secciones disponibles y la detección y clasificación de sus actividades mediante Playwright. El resto del alcance previsto es trabajo futuro.
 
 ## Objetivo
 
@@ -40,11 +40,13 @@ moodle-scraper/
 ├── models/
 │   ├── __init__.py
 │   ├── course.py
+│   ├── activity.py
 │   └── section.py
 ├── scraper/
 │   ├── __init__.py
 │   ├── browser.py
 │   ├── courses.py
+│   ├── activities.py
 │   ├── sections.py
 │   └── errors.py
 ├── tests/
@@ -69,7 +71,8 @@ cd C:\Users\Antemortem\Desktop\moodle-scraper
 4. Se abre únicamente ese curso y se muestran sus secciones en el orden original.
 5. Ante `Elegí una o más secciones:`, ingresá `3`, `2,3,5`, `2-5`, `1,3-5,7` o `all` para todas las disponibles. Se ignoran espacios alrededor de números y separadores. Las entradas inválidas o que incluyen secciones restringidas muestran un mensaje y vuelven a solicitarse.
 6. Se muestran las seleccionadas sin duplicados y en el orden del curso: `5,2,3-5` selecciona `2,3,4,5`.
-7. Presioná Enter para cerrar el navegador. También podés cancelar con Ctrl+C.
+7. El programa lee únicamente las secciones elegidas y muestra sus actividades agrupadas por sección y en orden. No abre los enlaces de las actividades.
+8. Presioná Enter para cerrar el navegador. También podés cancelar con Ctrl+C.
 
 Ejemplo basado en la inspección real (los cursos pueden cambiar):
 
@@ -121,7 +124,63 @@ Moodle duplica algunos textos para lectores de pantalla y crea contenedores ocul
 
 La lectura se verificó con el formato Tiles de esta instalación. Otros formatos o futuros cambios del sitio pueden requerir adaptar `sections.py`; si no hay secciones reconocibles se informa en consola. No se usa el contenido de actividades como título de sección.
 
-Esta etapa no descarga archivos, no extrae actividades ni páginas HTML, no genera un manifest y no implementa Tkinter. `session.json` se usa para abrir el navegador y no se reescribe.
+La etapa actual descubre actividades en las secciones seleccionadas. No descarga archivos ni extrae el contenido interno de los recursos, no exporta Markdown, no genera un manifest y no implementa Tkinter. `session.json` se usa para abrir el navegador y no se reescribe.
+
+## Etapa 3: detectar y clasificar actividades
+
+Ejecutá el mismo comando, sin instalar dependencias nuevas:
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+Elegí un curso y luego las secciones, por ejemplo `1,3,8` si esos números están disponibles. Tras mostrar “Seleccionadas”, se imprime la vista previa. `all` recorre sólo las secciones disponibles. Las secciones vacías muestran `(sin actividades)`.
+
+Archivos de esta etapa:
+
+- `models/activity.py`: modelo inmutable `Activity(id, title, url, type, section, position, is_available, file_format)`. `section` es el objeto `Section` original; `position` comienza en 1 dentro de esa sección. `id`, `url` y `file_format` pueden ser `None`. El ID corresponde al módulo del curso, no a su instancia interna.
+- `models/__init__.py`: exporta `Activity` junto con los modelos existentes.
+- `scraper/activities.py`: `get_activities(page, course, sections)` devuelve una lista de objetos `Activity`. Valida las secciones antes de navegar, conserva su orden y lee sólo sus contenedores. No imprime ni solicita entradas de consola.
+- `main.py`: integra la llamada y presenta los resultados agrupados por sección.
+- `tests/test_activities.py`: pruebas locales de tipos, restricciones, etiquetas, secciones vacías, orden y navegación limitada a las secciones elegidas.
+
+### Detección basada en el HTML inspeccionado
+
+En el formato Tiles de esta instalación, cada sección tiene un contenedor `.course-section#section-N`. Sus actividades están en `.activity`, con atributos como `data-cmid`, `data-title`, `data-modtype`, clases `modtype_*` y enlaces `a.cm-link`. La vista de General también usa `.activityname a`. Se ignoran separadores `.spacer`, controles de finalización y elementos ocultos.
+
+La clasificación prioriza los metadatos del elemento; después usa la ruta `/mod/<tipo>/` si es necesario. Admite `resource`, `page`, `assign`, `url`, `folder`, `forum`, `quiz`, `book`, `h5pactivity`, `label` y `other`. `resource_pdf` se normaliza a `resource`; el indicador PDF se obtiene de ese atributo o de `resourcetype_pdf`, sin consultar ni descargar el archivo.
+
+Las etiquetas declaradas como `label` se conservan aunque no tengan enlace. Un resumen textual de la sección se representa también como `label`, con un extracto de hasta 200 caracteres si no tiene título. No se convierte cada párrafo de la interfaz en una actividad ni se extraen imágenes. Los bloques desconocidos permanecen como `other`.
+
+Las actividades con `.availabilityinfo.isrestricted`, `aria-disabled="true"` o sin enlace habilitado (salvo etiquetas) se muestran como `[RESTRINGIDA/NO HABILITADA]`. No se inventan URL para ellas. Si una sección presenta una nueva restricción al cargarla, se detiene la lectura con un mensaje. La comprobación no abre ninguna actividad, archivo, carpeta, foro ni quiz: sólo lee su presencia en la sección.
+
+### Resultado verificado en Moodle
+
+En General, Semana 1 y Entrega PFO 1 de Administración de Base de Datos se encontraron **13 elementos**: `forum`, `page`, `resource` con marca PDF, `folder` y `assign`. Los demás tipos están contemplados, pero no se observaron en esas tres secciones. Las etiquetas y restricciones individuales se probaron con HTML local; no se encontró ninguna en esa muestra real.
+
+Ejemplo de salida real, abreviado:
+
+```text
+Curso: Administración de Base de Datos 2026 2C - 1° E
+
+General
+
+[FORUM] Avisos
+
+Semana 1 - Introducción a las Bases de Datos
+
+[PAGE] Apertura
+[PAGE] Orientaciones de la semana
+[PDF/RESOURCE] ⭐ Arquitectura Cliente-Servidor
+[PDF/RESOURCE] ⭐ Bases de Datos
+[FORUM] Foro de orientaciones y consultas
+...
+
+Entrega PFO 1
+
+[ASSIGN] Buzón de Entrega - PFO 1
+[FORUM] Consultas
+```
 
 ## Errores y comprobación
 
