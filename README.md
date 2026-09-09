@@ -1,69 +1,40 @@
-# Aulas Virtuales: inicio de sesión manual
+# Moodle Scraper
 
-Primera etapa: abrir Moodle, iniciar sesión manualmente y reutilizar esa sesión.
-No se recorren cursos ni se descargan archivos.
+Herramienta en Python para acceder a una cuenta de Moodle, reutilizar una sesión autenticada y, progresivamente, exportar cursos y contenido disponible para el usuario.
 
-## Archivos
+Actualmente el proyecto se encuentra en una etapa inicial enfocada en autenticación y persistencia de sesión mediante Playwright.
 
-- `login.py`: abre Chromium visible en `https://aulasvirtuales.bue.edu.ar/my/courses.php`, espera tu inicio de sesión manual y guarda `session.json` cuando presionás Enter en la consola. Luego cierra el navegador.
-- `test_session.py`: carga esa sesión y abre la misma página para comprobar visualmente el acceso. Espera Enter para cerrar. Es un script manual, no una prueba de pytest.
-- `requirements.txt`: fija la versión de Playwright.
-- `.gitignore`: excluye `.venv/`, `session.json`, `downloads/` y archivos temporales de Python.
-- `.venv/`: entorno local de Python y sus dependencias.
-- `session.json`: se genera al ejecutar el login; se guarda junto a los scripts, aunque los ejecutes desde otra carpeta.
+## Objetivo
 
-## Preparación en Windows (PowerShell)
+La idea del proyecto es construir un exportador de contenido de Moodle que permita guardar localmente información de los cursos accesibles desde una cuenta autenticada, 
+con el fin de facilitar la recolección de información a lo largo de mi camino en la Tecnicatura Superior en Desarrollo de Software.
 
-Abrí una terminal PowerShell y entrá a la carpeta:
+El alcance previsto incluye:
 
-```powershell
-cd C:\Users\Antemortem\Desktop\moodle-scraper
-```
+- cursos
+- secciones y unidades
+- archivos descargables
+- páginas HTML
+- imágenes incrustadas
+- consignas de actividades
+- links externos
+- metadata de los recursos
+- estructura local por curso
 
-Si preparás el proyecto desde cero, creá el entorno (si `.venv` ya existe y funciona, omití este comando):
+El proyecto no busca acceder a contenido fuera de los permisos de la cuenta utilizada.
 
-```powershell
-py -m venv .venv
-```
+## Tecnologías
 
-Instalá la dependencia y Chromium:
+- Python
+- Playwright
+- Chromium
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m playwright install chromium
-```
+## Estructura
 
-Los comandos usan directamente Python de `.venv`: no hace falta activar el entorno ni cambiar la política de ejecución de PowerShell.
-
-## Guardar la sesión
-
-```powershell
-.\.venv\Scripts\python.exe login.py
-```
-
-1. Se abre Chromium. Ingresá tus datos únicamente en el sitio y completá cualquier paso de autenticación.
-2. Esperá a ver tu cuenta y la página de tus cursos.
-3. Dejá abierto el navegador, volvé a PowerShell y presioná Enter.
-4. Verás el mensaje de sesión guardada y se cerrará Chromium.
-
-Enter es tu confirmación de que terminaste el login; el script no verifica automáticamente la autenticación. No presiones Enter mientras todavía estés en el formulario de acceso.
-
-## Comprobar que funciona
-
-```powershell
-.\.venv\Scripts\python.exe test_session.py
-```
-
-Se abre una nueva ventana con `session.json`. Si ves tu cuenta y tus cursos sin ingresar credenciales, funcionó. Presioná Enter en PowerShell para cerrar.
-
-Si Moodle vuelve a pedir acceso, la sesión puede haber vencido o haberse guardado antes de completar el login. Cerrá la prueba, ejecutá `login.py` otra vez y repetí la comprobación. La prueba no modifica el archivo de sesión.
-
-## Problemas frecuentes
-
-- **No existe session.json:** ejecutá primero `login.py`.
-- **Falta el ejecutable del navegador:** repetí el comando `-m playwright install chromium` indicado arriba.
-- **La página no carga o aparece un timeout:** comprobá tu conexión y el acceso al sitio en tu navegador habitual; después repetí el comando.
-- **session.json está dañado:** ejecutá `login.py` para reemplazarlo con una sesión nueva.
-- **Cancelar:** presioná Ctrl+C en la consola. Para el flujo normal, usá Enter antes de cerrar la ventana del navegador.
-
-No hay usuario ni contraseña en el código. `session.json` contiene datos de autenticación: no lo compartas ni lo subas a Git. Playwright documenta cómo guardar y reutilizar el estado en https://playwright.dev/python/docs/auth.
+```text
+moodle-scraper/
+├── login.py
+├── test_session.py
+├── requirements.txt
+├── .gitignore
+└── .venv/
