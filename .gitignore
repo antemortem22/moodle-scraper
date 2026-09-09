@@ -1,0 +1,5 @@
+.venv/
+session.json
+downloads/
+__pycache__/
+*.py[cod]
