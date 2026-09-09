@@ -13,3 +13,4 @@ class Activity:
     position: int  # Orden dentro de la sección, desde 1.
     is_available: bool = True
     file_format: str | None = None
+    content_html: str | None = None

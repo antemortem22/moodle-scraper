@@ -2,7 +2,7 @@
 
 Herramienta en Python para acceder a una cuenta de Moodle, reutilizar una sesión autenticada y, progresivamente, exportar cursos y contenido disponible para el usuario.
 
-Actualmente están implementadas la autenticación manual, la selección de secciones disponibles y la detección y clasificación de sus actividades mediante Playwright. El resto del alcance previsto es trabajo futuro.
+Actualmente están implementadas la autenticación manual, la selección de secciones disponibles y la exportación de sus actividades: archivos originales y documentos Word editables. El resto del alcance previsto es trabajo futuro.
 
 ## Objetivo
 
@@ -58,7 +58,7 @@ moodle-scraper/
 
 ## Etapa 2: probar desde PowerShell
 
-La instalación existente sirve; no hay dependencias nuevas. No hace falta activar `.venv`.
+No hace falta activar `.venv`. Para la exportación actual, instalá las dependencias de `requirements.txt` como se indica en la etapa 4.
 
 ```powershell
 cd C:\Users\Antemortem\Desktop\moodle-scraper
@@ -71,7 +71,7 @@ cd C:\Users\Antemortem\Desktop\moodle-scraper
 4. Se abre únicamente ese curso y se muestran sus secciones en el orden original.
 5. Ante `Elegí una o más secciones:`, ingresá `3`, `2,3,5`, `2-5`, `1,3-5,7` o `all` para todas las disponibles. Se ignoran espacios alrededor de números y separadores. Las entradas inválidas o que incluyen secciones restringidas muestran un mensaje y vuelven a solicitarse.
 6. Se muestran las seleccionadas sin duplicados y en el orden del curso: `5,2,3-5` selecciona `2,3,4,5`.
-7. El programa lee únicamente las secciones elegidas y muestra sus actividades agrupadas por sección y en orden. No abre los enlaces de las actividades.
+7. El programa lee únicamente las secciones elegidas y exporta todas sus actividades compatibles y disponibles, sin pedir selección recurso por recurso.
 8. Presioná Enter para cerrar el navegador. También podés cancelar con Ctrl+C.
 
 Ejemplo basado en la inspección real (los cursos pueden cambiar):
@@ -124,24 +124,24 @@ Moodle duplica algunos textos para lectores de pantalla y crea contenedores ocul
 
 La lectura se verificó con el formato Tiles de esta instalación. Otros formatos o futuros cambios del sitio pueden requerir adaptar `sections.py`; si no hay secciones reconocibles se informa en consola. No se usa el contenido de actividades como título de sección.
 
-La etapa actual descubre actividades en las secciones seleccionadas. No descarga archivos ni extrae el contenido interno de los recursos, no exporta Markdown, no genera un manifest y no implementa Tkinter. `session.json` se usa para abrir el navegador y no se reescribe.
+La capa de detección sigue devolviendo modelos independientes. La exportación actual se describe en la etapa 4. `session.json` se usa para abrir el navegador y no se reescribe.
 
 ## Etapa 3: detectar y clasificar actividades
 
-Ejecutá el mismo comando, sin instalar dependencias nuevas:
+La detección forma parte del flujo integrado actual:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
 ```
 
-Elegí un curso y luego las secciones, por ejemplo `1,3,8` si esos números están disponibles. Tras mostrar “Seleccionadas”, se imprime la vista previa. `all` recorre sólo las secciones disponibles. Las secciones vacías muestran `(sin actividades)`.
+Elegí un curso y luego las secciones, por ejemplo `1,3,8` si esos números están disponibles. Tras mostrar “Seleccionadas”, la etapa 4 exporta sus recursos. `all` recorre sólo las secciones disponibles. La salida de ejemplo de esta etapa documenta la clasificación previa a la exportación.
 
 Archivos de esta etapa:
 
 - `models/activity.py`: modelo inmutable `Activity(id, title, url, type, section, position, is_available, file_format)`. `section` es el objeto `Section` original; `position` comienza en 1 dentro de esa sección. `id`, `url` y `file_format` pueden ser `None`. El ID corresponde al módulo del curso, no a su instancia interna.
 - `models/__init__.py`: exporta `Activity` junto con los modelos existentes.
 - `scraper/activities.py`: `get_activities(page, course, sections)` devuelve una lista de objetos `Activity`. Valida las secciones antes de navegar, conserva su orden y lee sólo sus contenedores. No imprime ni solicita entradas de consola.
-- `main.py`: integra la llamada y presenta los resultados agrupados por sección.
+- `main.py`: integra ahora la exportación y presenta su progreso por consola.
 - `tests/test_activities.py`: pruebas locales de tipos, restricciones, etiquetas, secciones vacías, orden y navegación limitada a las secciones elegidas.
 
 ### Detección basada en el HTML inspeccionado
@@ -183,6 +183,79 @@ Entrega PFO 1
 ```
 
 ## Errores y comprobación
+
+## Etapa 4: exportar las secciones seleccionadas
+
+### Ejecutar en Windows
+
+```powershell
+cd C:\Users\Antemortem\Desktop\moodle-scraper
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
+
+Elegí el curso y las secciones, por ejemplo `3,8` o `all`. La exportación comienza automáticamente: no hay selección de actividades individuales. `all` incluye únicamente secciones disponibles. Al terminar se informa la carpeta de salida, el número de archivos y los errores registrados.
+
+### Tipos soportados
+
+| Tipo | Resultado |
+|---|---|
+| `resource` | Archivo original, siguiendo redirecciones y enlaces de archivo de Moodle. |
+| `page` | `.docx` con el contenido académico de `.generalbox .no-overflow`. |
+| `assign` | `.docx` con la consigna de `#intro` y descargas separadas de los adjuntos visibles. No incluye entregas, calificaciones ni comentarios del alumno. |
+| `url` | `.docx` con título y URL destino. No solicita el sitio externo. |
+| `folder` | Todos los archivos accesibles del árbol de la carpeta; conserva formatos y nombres originales. |
+| `label` | `.docx` con el HTML académico que se capturó en la sección. |
+| Otros | Mensaje `[SKIP] Tipo no soportado: ...`, continuando con el resto. |
+
+Los archivos PDF, DOCX, PPTX, XLSX, ZIP, imágenes, SQL y otros formatos se conservan como bytes originales; no se convierten a Word. Las actividades restringidas no se solicitan. Los fallos individuales, incluidos adjuntos e imágenes, se registran y no interrumpen los siguientes recursos.
+
+### Estructura del Word
+
+Se usa `python-docx` con un título `Heading 1`, subtítulos jerárquicos, párrafos Normal, negrita, cursiva, listas de Word, tablas con celdas combinadas, citas y bloques de código en Consolas. Se mantiene el orden de los elementos. Los enlaces se conservan como texto seguido de la URL completa, editable en Word.
+
+Las imágenes incrustadas se obtienen con la sesión autenticada cuando corresponde y se insertan en el DOCX ajustadas al ancho. Pillow adapta formatos como WebP/GIF para insertarlos en Word. Si una imagen falla o su formato no puede insertarse, se registra el error y se conserva su descripción y URL en el documento.
+
+Los iframes, vídeos y aplicaciones externas como Genially se conservan como título/enlace: su contenido interactivo no se convierte ni se descarga. No se reproduce el CSS de Moodle. Los contenedores académicos están verificados en esta instalación; un cambio de tema o formato puede necesitar ajustes.
+
+### Archivos y organización
+
+```text
+downloads/
+└── Nombre del Curso/
+    ├── export.log
+    └── Nombre de la Sección/
+        ├── 00 - Índice.docx
+        ├── 01 - Apertura.docx
+        ├── 03 - Archivo original.pdf
+        ├── 08.01 - Archivo de carpeta.sql
+        └── ...
+```
+
+El prefijo corresponde a la posición original de la actividad; se conservan los huecos de actividades omitidas. Los adjuntos y archivos de carpetas usan subnúmeros (`08.01`, `08.02`). El índice lista sólo los archivos efectivamente exportados y en ese orden. Está activado por defecto; desde código se puede usar `create_index=False`.
+
+Los nombres se sanitizan para Windows. Si ya existe una carpeta de curso se crea otra con sufijo `(2)`, `(3)`, etc.; nunca se reutiliza para una sincronización. Los nombres de archivo repetidos también reciben sufijos. Esto evita sobrescrituras, incluso si dos nombres distintos se vuelven iguales al quitar caracteres no válidos. Las carpetas Moodle anidadas se reúnen dentro de la carpeta de la sección, con nombres únicos.
+
+### Módulos de exportación
+
+- `exporter/service.py`: `export_sections(page, course, sections, output_root=..., create_index=True, progress=...)`; coordina las secciones, devuelve `ExportReport` con archivos y errores y emite mensajes mediante un callback. Crea `export.log` por ejecución.
+- `exporter/downloader.py`: solicitudes GET autenticadas, redirecciones, detección de archivos y nombres originales mediante `Content-Disposition` o URL. Resuelve actividades URL sin visitar el sitio externo.
+- `exporter/docx_exporter.py`: mapeo de HTML a Word e inserción de imágenes.
+- `exporter/paths.py`: nombres seguros, rutas cortas y reserva de archivos sin sobrescribir.
+- `models/activity.py` y `scraper/activities.py`: conservan el HTML de etiquetas en `content_html` para exportarlo sin perder su estructura.
+- `main.py`: conserva la selección existente y llama a la exportación.
+- `requirements.txt`: agrega `python-docx`, `beautifulsoup4` y `Pillow`.
+- `tests/test_exporter.py`: valida documentos Word, nombres, redirecciones, aislamiento de contenido, continuidad ante errores e índices.
+
+### Comprobación realizada
+
+Se exportaron Semana 1 y Entrega PFO 1 del curso de Administración de Base de Datos: 15 archivos, incluidos 8 DOCX, PDFs originales, dos SQL y los adjuntos de la consigna. Se reabrieron los Word con `python-docx`, verificando también imágenes y una tabla, y se comprobaron las cabeceras de los PDF. No se realizó una revisión visual en Microsoft Word. Los nombres con acentos de los adjuntos y sus índices se corrigieron.
+
+Para revisar manualmente, abrí `downloads`, entrá en el curso y la sección y abrí sus `.docx` con Word. Probá editar los títulos, párrafos y tablas. Si aparece `[ERROR]`, consultá `export.log`; el resto de la exportación continúa.
+
+El proyecto todavía no implementa GUI, manifest, sincronización, conversión a Markdown/PDF ni exportación interna de foros, quizzes, H5P, SCORM o libros Moodle.
+
+## Comprobación de sesión y pruebas
 
 ### Secciones restringidas
 

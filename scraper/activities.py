@@ -48,7 +48,8 @@ def normalize_activities(rows: list[dict], section: Section, base_url: str) -> l
         available = section.is_available and not row.get("restricted", False) and (bool(url) or kind == "label")
         pdf = modtype == "resource_pdf" or "resourcetype_pdf" in row.get("classes", "").split()
         activities.append(Activity(activity_id, title, url, kind, section, len(activities) + 1,
-                                   available, "pdf" if kind == "resource" and pdf else None))
+                                   available, "pdf" if kind == "resource" and pdf else None,
+                                   row.get("html") if kind == "label" else None))
     return activities
 
 
@@ -112,7 +113,7 @@ def get_activities(page: Page, course: Course, sections: list[Section]) -> list[
                     rows.push({
                         id: summary ? '' : el.dataset.cmid || el.id.match(/^module-(\d+)$/)?.[1] || '',
                         title: summary ? '' : el.dataset.title || nameCopy?.textContent || '',
-                        text, url: link?.getAttribute('href') || '',
+                        text, html: copy.innerHTML, url: link?.getAttribute('href') || '',
                         modtype: summary ? 'label' : el.dataset.modtype || '',
                         classes: el.className,
                         restricted: Boolean(el.querySelector('.availabilityinfo.isrestricted')) || el.getAttribute('aria-disabled') === 'true'
