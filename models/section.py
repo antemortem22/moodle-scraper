@@ -6,3 +6,4 @@ class Section:
     name: str
     position: int  # Posición en el listado original, comenzando en 1.
     url: str | None = None
+    is_available: bool = True

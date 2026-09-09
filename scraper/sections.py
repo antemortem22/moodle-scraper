@@ -8,7 +8,7 @@ from .browser import check_session, navigate
 from .errors import PageLoadError
 
 
-def normalize_sections(rows: list[dict[str, str]], course_url: str) -> list[Section]:
+def normalize_sections(rows: list[dict], course_url: str) -> list[Section]:
     result = []
     seen = set()
     for row in rows:
@@ -18,9 +18,10 @@ def normalize_sections(rows: list[dict[str, str]], course_url: str) -> list[Sect
         if key:
             seen.add(key)
         position = len(result) + 1
-        name = " ".join(row["name"].split()) or f"Sección sin título ({position})"
+        fallback = "General" if position == 1 else f"Sección sin título ({position})"
+        name = " ".join(row["name"].split()) or fallback
         url = urljoin(course_url, row["url"]) if row["url"] else None
-        result.append(Section(name, position, url))
+        result.append(Section(name, position, url, row.get("is_available", True)))
     return result
 
 
@@ -37,10 +38,19 @@ def get_sections(page: Page, course: Course) -> list[Section]:
                 ? el.querySelector('a.tile-link h3')
                 : el.querySelector(':scope > h2, :scope > h3, :scope > .content > h2, :scope > .content > h3');
             const link = tile ? el.querySelector('a.tile-link') : heading?.querySelector('a[href]');
+            // Señales verificadas en Tiles. No confundir restricciones de una
+            // actividad con restricciones de la sección que la contiene.
+            const restricted = el.classList.contains('tile-restricted') ||
+                [...el.querySelectorAll('.availabilityinfo.isrestricted')].some(info =>
+                    !info.closest('.activity') &&
+                    info.closest('.course-section, li.tile') === el);
+            const isAvailable = !restricted && (!tile ||
+                (el.classList.contains('tile-clickable') && Boolean(link?.getAttribute('href'))));
             return {
                 key: el.dataset.section || el.id,
-                name: heading?.textContent || '',
-                url: link?.getAttribute('href') || (el.id ? '#' + el.id : '')
+                name: heading?.checkVisibility() ? heading.innerText : '',
+                url: link?.getAttribute('href') || (el.id ? '#' + el.id : ''),
+                is_available: isAvailable
             };
         })""")
         return normalize_sections(rows, course.url)

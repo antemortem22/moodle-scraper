@@ -102,13 +102,29 @@ class BrowserTests(unittest.TestCase):
             </div></div>''')
         course = Course(12, "Ejemplo", f"{BASE_URL}/course/view.php?id=12")
         result = get_sections(self.page, course)
-        self.assertEqual([s.name for s in result], ["Sección sin título (1)", "Unidad 4", "Entrega PFO"])
+        self.assertEqual([s.name for s in result], ["General", "Unidad 4", "Entrega PFO"])
         self.assertEqual([s.position for s in result], [1, 2, 3])
         self.assertTrue(result[1].url.endswith("?id=12&section=2"))
 
     def test_course_without_sections(self):
         self.serve('<div role="main"><div class="course-content"></div></div>')
         self.assertEqual(get_sections(self.page, Course(1, "Vacío", f"{BASE_URL}/course/view.php?id=1")), [])
+
+    def test_real_tiles_restriction_signals(self):
+        self.serve('''<meta charset="utf-8"><div role="main"><div class="course-content">
+            <div class="course-section" data-section="0"><div class="content">
+                <li class="activity"><div class="availabilityinfo isrestricted">Actividad restringida</div></li>
+            </div></div>
+            <ul>
+                <li class="tile tile-clickable" data-section="1"><a class="tile-link" href="?id=12&section=1"><h3>Disponible</h3></a></li>
+                <li class="tile tile-restricted" data-section="2"><a class="tile-link"><h3>Futura</h3></a></li>
+                <li class="tile tile-clickable" data-section="3"><a class="tile-link" href="?id=12&section=3"><div class="availabilityinfo isrestricted"><span title="Disponible desde una fecha futura">Restringido</span></div><h3>Con restricción explícita</h3></a></li>
+                <li class="tile" data-section="4"><a class="tile-link"><h3>Sin enlace habilitado</h3></a></li>
+            </ul></div></div>''')
+        course = Course(12, "Ejemplo", f"{BASE_URL}/course/view.php?id=12")
+        sections = get_sections(self.page, course)
+        self.assertEqual([s.is_available for s in sections], [True, True, False, False, False])
+        self.assertEqual([s.name for s in sections], ["General", "Disponible", "Futura", "Con restricción explícita", "Sin enlace habilitado"])
 
     def test_expired_session(self):
         self.serve('<div role="main"><input type="password"></div>')
