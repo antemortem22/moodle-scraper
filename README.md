@@ -1,5 +1,40 @@
 # Moodle Scraper
 
+## Interfaz de escritorio
+
+```powershell
+.\.venv\Scripts\python.exe gui.py
+```
+
+La ventana comprueba `session.json` y carga los cursos. Elegí un curso en el desplegable, marcá las semanas/secciones y pulsá **Descargar selección**. Las restringidas aparecen deshabilitadas. También podés marcar todas las disponibles o limpiar la selección.
+
+La interfaz oscura tiene dos paneles redimensionables: **Descargar** y **Biblioteca local**. Podés arrastrar el separador central para repartir el espacio. La barra animada indica actividad; mientras descarga muestra la cantidad de archivos guardados, sin inventar un total que el exportador todavía no conoce. Al finalizar informa `Finalizado · N archivos · M errores`. Los mensajes técnicos quedan en **Ver detalles**, plegado por defecto.
+
+El estado muestra **● Conectada / Renovar sesión** o **○ Sin sesión / Iniciar sesión**. Los botones de confirmar o cancelar el inicio sólo aparecen durante ese proceso.
+
+La biblioteca refleja las carpetas y archivos reales de `downloads/`, incluidos ZIP y descargas anteriores. **Actualizar** vuelve a leer el disco. Al seleccionar un archivo se habilitan **Abrir archivo** y **Abrir ubicación**; al seleccionar una carpeta se habilitan **Abrir carpeta** y **Exportar ZIP**. Un doble clic en un archivo lo abre con su aplicación predeterminada de Windows. No se abren en lote los archivos de una carpeta.
+
+El menú de clic derecho ofrece abrir, abrir ubicación, exportar una carpeta/sección a ZIP y **Eliminar descarga local**. La eliminación es permanente y siempre requiere confirmar la ruta; si es una carpeta incluye su contenido. Sólo se permiten rutas dentro de `downloads/` y no se siguen enlaces simbólicos ni uniones de carpetas. Moodle no se modifica.
+
+El ZIP se guarda junto a la carpeta elegida: por ejemplo, `Curso/Semana 1.zip`, con la sección y su estructura interna. Conserva todos los archivos originales y no vuelve a descargar nada. Si el ZIP ya existe se usa `(2)`, `(3)`, etc., sin sobrescribirlo. La compresión y eliminación corren fuera del hilo de Tkinter; mientras trabajan se bloquean las acciones que podrían entrar en conflicto con una descarga.
+
+La paleta está centralizada en **`ui/theme.py`, diccionario `PALETTE`**. Cambiá allí `bg`, `panel`, `accent`, `soft`, `deep`, `text`, `muted`, `border`, `success` y `error`, y reiniciá la app. `apply_theme()` aplica esos valores mediante `ttk.Style` y el tema `clam`; los widgets clásicos usan la misma paleta.
+
+Si la sesión falta o expiró, pulsá **Iniciar / renovar sesión**. Se abre Chromium para iniciar sesión manualmente. Cuando veas tu cuenta, volvé a la interfaz y pulsá **Ya inicié sesión**. El programa verifica el acceso a tus cursos, guarda `session.json` y carga el desplegable automáticamente. Si todavía no completaste el login, permite reintentar. **Cancelar inicio** cierra el navegador sin reemplazar la sesión anterior. No hace falta usar Enter ni abrir una consola para este flujo; `login.py` sigue disponible como alternativa.
+
+La interfaz no solicita ni guarda contraseñas. Ante un error de sesión se limpian las selecciones anteriores y se deshabilita la descarga. Si cerrás la ventana durante el login, se cancela; durante una exportación, espera a que termine para cerrar correctamente el navegador y los archivos.
+
+- `gui.py`: inicia Tkinter.
+- `ui/app.py`: controles, casillas, barra de actividad, mensajes y árbol de archivos.
+- `ui/layout.py`: distribución de los dos paneles y widgets.
+- `ui/theme.py`: paleta oscura y estilos violetas.
+- `ui/library.py`: creación de ZIP y eliminación local con validación de rutas.
+- `tests/test_library.py`: pruebas de ZIP, colisiones y límites de eliminación.
+- `ui/worker.py`: conexión y exportación en un hilo separado; crea, usa y cierra Playwright dentro de ese mismo hilo. Se comunica con Tkinter mediante una cola.
+- `tests/test_ui.py`: pruebas del hilo de trabajo y de los controles, con ventanas ocultas y sin acceder a Moodle.
+
+Tkinter ya está disponible en la instalación de Python de este equipo. `main.py` sigue siendo la alternativa por consola. La interfaz reutiliza el exportador actual y no genera índices por sección.
+
 Herramienta en Python para acceder a una cuenta de Moodle, reutilizar una sesión autenticada y, progresivamente, exportar cursos y contenido disponible para el usuario.
 
 Actualmente están implementadas la autenticación manual, la selección de secciones disponibles y la exportación de sus actividades: archivos originales y documentos Word editables. El resto del alcance previsto es trabajo futuro.
@@ -223,37 +258,37 @@ Los iframes, vídeos y aplicaciones externas como Genially se conservan como tí
 ```text
 downloads/
 └── Nombre del Curso/
-    ├── export.log
     └── Nombre de la Sección/
-        ├── 00 - Índice.docx
         ├── 01 - Apertura.docx
         ├── 03 - Archivo original.pdf
         ├── 08.01 - Archivo de carpeta.sql
         └── ...
 ```
 
-El prefijo corresponde a la posición original de la actividad; se conservan los huecos de actividades omitidas. Los adjuntos y archivos de carpetas usan subnúmeros (`08.01`, `08.02`). El índice lista sólo los archivos efectivamente exportados y en ese orden. Está activado por defecto; desde código se puede usar `create_index=False`.
+El prefijo corresponde a la posición original de la actividad; se conservan los huecos de actividades omitidas. Los adjuntos y archivos de carpetas usan subnúmeros (`08.01`, `08.02`). No se generan índices por sección.
+
+Los mensajes técnicos se acumulan en `logs/export.log`, fuera de `downloads/`. La carpeta `logs/` se crea automáticamente y está ignorada por Git. La Biblioteca Local oculta los archivos `.log`, incluidos los de exportaciones anteriores.
 
 Los nombres se sanitizan para Windows. Si ya existe una carpeta de curso se crea otra con sufijo `(2)`, `(3)`, etc.; nunca se reutiliza para una sincronización. Los nombres de archivo repetidos también reciben sufijos. Esto evita sobrescrituras, incluso si dos nombres distintos se vuelven iguales al quitar caracteres no válidos. Las carpetas Moodle anidadas se reúnen dentro de la carpeta de la sección, con nombres únicos.
 
 ### Módulos de exportación
 
-- `exporter/service.py`: `export_sections(page, course, sections, output_root=..., create_index=True, progress=...)`; coordina las secciones, devuelve `ExportReport` con archivos y errores y emite mensajes mediante un callback. Crea `export.log` por ejecución.
+- `exporter/service.py`: `export_sections(page, course, sections, output_root=..., progress=...)`; coordina las secciones, devuelve `ExportReport` con archivos y errores y emite mensajes mediante un callback. Agrega los mensajes a `logs/export.log`.
 - `exporter/downloader.py`: solicitudes GET autenticadas, redirecciones, detección de archivos y nombres originales mediante `Content-Disposition` o URL. Resuelve actividades URL sin visitar el sitio externo.
 - `exporter/docx_exporter.py`: mapeo de HTML a Word e inserción de imágenes.
 - `exporter/paths.py`: nombres seguros, rutas cortas y reserva de archivos sin sobrescribir.
 - `models/activity.py` y `scraper/activities.py`: conservan el HTML de etiquetas en `content_html` para exportarlo sin perder su estructura.
 - `main.py`: conserva la selección existente y llama a la exportación.
 - `requirements.txt`: agrega `python-docx`, `beautifulsoup4` y `Pillow`.
-- `tests/test_exporter.py`: valida documentos Word, nombres, redirecciones, aislamiento de contenido, continuidad ante errores e índices.
+- `tests/test_exporter.py`: valida documentos Word, nombres, redirecciones, aislamiento de contenido, continuidad ante errores y ausencia de índices.
 
 ### Comprobación realizada
 
 Se exportaron Semana 1 y Entrega PFO 1 del curso de Administración de Base de Datos: 15 archivos, incluidos 8 DOCX, PDFs originales, dos SQL y los adjuntos de la consigna. Se reabrieron los Word con `python-docx`, verificando también imágenes y una tabla, y se comprobaron las cabeceras de los PDF. No se realizó una revisión visual en Microsoft Word. Los nombres con acentos de los adjuntos y sus índices se corrigieron.
 
-Para revisar manualmente, abrí `downloads`, entrá en el curso y la sección y abrí sus `.docx` con Word. Probá editar los títulos, párrafos y tablas. Si aparece `[ERROR]`, consultá `export.log`; el resto de la exportación continúa.
+Para revisar manualmente, abrí `downloads`, entrá en el curso y la sección y abrí sus `.docx` con Word. Probá editar los títulos, párrafos y tablas. Si aparece `[ERROR]`, consultá `logs/export.log`; el resto de la exportación continúa.
 
-El proyecto todavía no implementa GUI, manifest, sincronización, conversión a Markdown/PDF ni exportación interna de foros, quizzes, H5P, SCORM o libros Moodle.
+El proyecto todavía no implementa manifest, sincronización, conversión a Markdown/PDF ni exportación interna de foros, quizzes, H5P, SCORM o libros Moodle.
 
 ## Comprobación de sesión y pruebas
 

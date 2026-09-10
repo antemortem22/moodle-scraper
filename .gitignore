@@ -1,5 +1,6 @@
 .venv/
 session.json
 downloads/
+logs/
 __pycache__/
 *.py[cod]

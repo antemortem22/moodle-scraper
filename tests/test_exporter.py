@@ -103,7 +103,7 @@ class ExporterTests(unittest.TestCase):
             self.assertEqual(len(warnings),1)
             self.assertNotIn('https://external.test/interactive', requests.calls)
 
-    def test_export_continues_and_indexes_only_successes(self):
+    def test_export_continues_without_generating_indexes(self):
         course = Course(1,'Curso','https://m/course/view.php?id=1')
         section = Section('Semana',1,course.url+'&section=1')
         activities = [
@@ -117,18 +117,17 @@ class ExporterTests(unittest.TestCase):
                            'https://m/file':Response('https://m/file',b'original',{'content-disposition':'attachment; filename="file.zip"'})})
         page = SimpleNamespace(context=SimpleNamespace(request=request))
         with tempfile.TemporaryDirectory() as directory, patch('exporter.service.get_activities',return_value=activities) as discover:
-            report = export_sections(page,course,[section],output_root=directory)
+            log_path = Path(directory)/'logs'/'export.log'
+            report = export_sections(page,course,[section],output_root=directory,log_path=log_path)
             discover.assert_called_once_with(page,course,[section])
             self.assertEqual(len(report.errors),1)
-            self.assertEqual(len(report.files),3)
-            index = next(p for p in report.files if p.name.startswith('00'))
-            text = '\n'.join(p.text for p in Document(index).paragraphs)
-            self.assertIn('02 - file.zip',text)
-            self.assertIn('05 - Texto.docx',text)
-            self.assertNotIn('Error',text)
+            self.assertEqual([p.name for p in report.files], ['02 - file.zip', '05 - Texto.docx'])
+            self.assertEqual(list(report.directory.rglob('00 - *.docx')), [])
             self.assertNotIn('https://m/restricted',request.calls)
             self.assertNotIn('https://m/quiz',request.calls)
-            self.assertTrue((report.directory/'export.log').exists())
+            self.assertEqual(list(report.directory.rglob('*.log')), [])
+            self.assertIn('[CURSO] Curso', log_path.read_text(encoding='utf-8'))
+            self.assertIn('[ERROR]', log_path.read_text(encoding='utf-8'))
 
     def test_assign_and_folder_continue_after_attachment_error(self):
         course = Course(1,'Curso','https://m/course/view.php?id=1')
@@ -144,7 +143,7 @@ class ExporterTests(unittest.TestCase):
         items = [Activity(1,'Consigna','https://m/assign','assign',section,1),Activity(2,'Carpeta','https://m/folder','folder',section,2)]
         page = SimpleNamespace(context=SimpleNamespace(request=request))
         with tempfile.TemporaryDirectory() as directory, patch('exporter.service.get_activities',return_value=items):
-            report = export_sections(page,course,[section],output_root=directory,create_index=False)
+            report = export_sections(page,course,[section],output_root=directory,log_path=Path(directory)/'logs'/'export.log')
             self.assertEqual(len(report.errors),1)
             self.assertEqual(len(report.files),4)
             self.assertEqual([p.read_bytes() for p in report.files if p.suffix=='.xlsx'],[b'b',b'c',b'd'])

@@ -11,6 +11,7 @@ from .downloader import Downloader
 from .paths import unique_path
 
 DOWNLOADS = Path(__file__).resolve().parents[1] / 'downloads'
+EXPORT_LOG = Path(__file__).resolve().parents[1] / 'logs' / 'export.log'
 SUPPORTED = {'resource','page','assign','url','folder','label'}
 
 
@@ -57,14 +58,16 @@ def academic_content(payload, kind):
 
 
 def export_sections(page, course: Course, sections: list[Section], *, output_root=DOWNLOADS,
-                    create_index=True, progress=lambda message: None) -> ExportReport:
+                    progress=lambda message: None, log_path=EXPORT_LOG) -> ExportReport:
     directory = unique_path(Path(output_root), course.name, directory=True)
     report = ExportReport(directory)
     downloader = Downloader(page.context.request)
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def emit(message):
         progress(message)
-        with (directory / 'export.log').open('a', encoding='utf-8') as log:
+        with log_path.open('a', encoding='utf-8') as log:
             log.write(message + '\n')
 
     def error(message):
@@ -81,7 +84,6 @@ def export_sections(page, course: Course, sections: list[Section], *, output_roo
             emit('[SKIP] Sección restringida: ' + section.name)
             continue
         emit('[SECCION] ' + section.name)
-        exported = []
         try:
             section_dir = unique_path(directory, section.name, directory=True)
             activities = get_activities(page, course, [section])
@@ -90,7 +92,6 @@ def export_sections(page, course: Course, sections: list[Section], *, output_roo
             continue
 
         def record(path, tag):
-            exported.append(path)
             report.files.append(path)
             emit(f'[{tag}] {path.name}')
 
@@ -138,14 +139,4 @@ def export_sections(page, course: Course, sections: list[Section], *, output_roo
                 error(f'{activity.title}: {exc}')
         if not activities:
             emit('[INFO] Sin actividades')
-        if create_index:
-            try:
-                html = '<ol>' + ''.join(f'<li>{escape(p.name)}</li>' for p in exported) + '</ol>'
-                if not exported:
-                    html = '<p>No se exportaron recursos. Consultá export.log.</p>'
-                index = DocxExporter(downloader).export(section.name, html, '', section_dir, '00 - Índice.docx')
-                report.files.append(index)
-                emit('[DOCX] ' + index.name)
-            except Exception as exc:
-                error(f'Índice de {section.name}: {exc}')
     return report
