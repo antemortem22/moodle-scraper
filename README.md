@@ -4,6 +4,8 @@ Aplicación de escritorio en Python para descargar y organizar contenido de Mood
 
 Permite elegir cursos y semanas/secciones, descargar todo el contenido disponible y guardarlo ordenado por materia.
 
+Desarrollada para poder resolver una problematica organizacional que me surgió al comenzar mi trayecto como Técnica Superior en Desarrollo de Software a distancia.
+
 ## Features
 
 - Login manual con sesión persistente
