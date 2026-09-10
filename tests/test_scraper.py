@@ -93,6 +93,22 @@ class BrowserTests(unittest.TestCase):
         navigate(self.page, COURSES_URL)
         self.assertEqual(get_courses(self.page), [])
 
+    def test_favorites_use_actual_star_state(self):
+        self.serve('''<div role="main"><div data-region="myoverview">
+            <a data-filter="grouping" data-value="all" aria-current="true">Todos</a>
+            <div data-region="paged-content-page" data-page="1">
+            <a class="coursename" href="/course/view.php?id=1">Favorito
+              <span data-region="favourite-icon"><span data-region="is-favourite" aria-hidden="false" class="text-primary"><span class="sr-only">El curso es destacado</span></span></span></a>
+            <a class="coursename" href="/course/view.php?id=2">Normal
+              <span data-region="favourite-icon"><span data-region="is-favourite" aria-hidden="true" class="text-primary hidden"></span></span></a>
+            <a class="coursename" href="/course/view.php?id=3">Sin señal</a>
+            </div><nav data-region="paging-bar" data-active-page-number="1" data-last-page-number="1">
+            <li data-control="next" aria-disabled="true"></li></nav></div></div>''')
+        navigate(self.page, COURSES_URL)
+        courses = get_courses(self.page)
+        self.assertEqual([c.is_favorite for c in courses], [True, False, False])
+        self.assertEqual(courses[0].name, 'Favorito')
+
     def test_sections_order_blanks_and_hidden_placeholders(self):
         self.serve('''<div role="main"><div class="course-content">
             <div class="course-section" data-section="0" id="section-0"><div class="content"><div class="summary"><h3>Texto que no es título de sección</h3></div></div></div>

@@ -23,7 +23,7 @@ def wait_for_courses_page(page: Page) -> None:
     }""")
 
 
-def normalize_courses(rows: list[dict[str, str]]) -> list[Course]:
+def normalize_courses(rows: list[dict]) -> list[Course]:
     """Normaliza URL, espacios y duplicados sin depender del navegador."""
     courses: dict[int, Course] = {}
     for row in rows:
@@ -35,7 +35,7 @@ def normalize_courses(rows: list[dict[str, str]]) -> list[Course]:
             continue
         course_id = int(value)
         name = " ".join(row["name"].split()) or f"Curso {course_id} (sin título)"
-        courses.setdefault(course_id, Course(course_id, name, f"{BASE_URL}/course/view.php?id={course_id}"))
+        courses.setdefault(course_id, Course(course_id, name, f"{BASE_URL}/course/view.php?id={course_id}", row.get('is_favorite') is True))
     return list(courses.values())
 
 
@@ -71,7 +71,12 @@ def get_courses(page: Page) -> list[Course]:
                 const title = a.querySelector('.multiline[title]');
                 const copy = a.cloneNode(true);
                 copy.querySelectorAll('.sr-only, [data-region="favourite-icon"]').forEach(x => x.remove());
-                return {url: a.href, name: title?.getAttribute('title') || copy.textContent || ''};
+                // Inspected in this Moodle: non-favorites keep the star in the
+                // DOM with aria-hidden="true" and class "hidden".
+                const star = a.querySelector('[data-region="favourite-icon"] [data-region="is-favourite"]');
+                const favorite = !!star && star.getAttribute('aria-hidden') === 'false'
+                    && !star.classList.contains('hidden');
+                return {url: a.href, name: title?.getAttribute('title') || copy.textContent || '', is_favorite: favorite};
             })"""))
             next_item = paging.locator('[data-control="next"]')
             if next_item.get_attribute("aria-disabled") == "true":

@@ -25,10 +25,15 @@ class MoodleApp:
         self.login_confirm = Event()
         self.login_cancel = Event()
         self.courses = []
+        self.all_courses = []
+        self.course_filter = tk.StringVar(value='Destacados')
         self.sections = []
         self.checks = []
         self.tree_paths = {}
         self.connected = False
+        self.checking_session = False
+        self.network_job = False
+        self.has_log_entries = False
         self.details_visible = False
         self.download_count = 0
         self.session = tk.StringVar(value='○ Sin sesión')
@@ -53,6 +58,8 @@ class MoodleApp:
     def update_controls(self):
         available = not self.busy and not self.closing
         self.session.set('● Conectada' if self.connected else '○ Sin sesión')
+        if self.checking_session:
+            self.session.set('○ Comprobando sesión…')
         self.session_label.configure(foreground=PALETTE['success'] if self.connected else PALETTE['muted'])
         self.login_button.configure(text='Renovar sesión' if self.connected else 'Iniciar sesión')
         self.login_button.configure(state='normal' if available else 'disabled')
@@ -63,6 +70,7 @@ class MoodleApp:
         self.confirm_button.configure(state='normal' if self.login_active and self.login_ready and not self.closing else 'disabled')
         self.cancel_button.configure(state='normal' if self.login_active and not self.closing else 'disabled')
         self.course_combo.configure(state='readonly' if available and self.courses else 'disabled')
+        self.filter_combo.configure(state='readonly' if available else 'disabled')
         for section, variable, widget in self.checks:
             widget.configure(state='normal' if available and section.is_available else 'disabled')
         state = 'normal' if available and any(s.is_available for s in self.sections) else 'disabled'
@@ -75,6 +83,9 @@ class MoodleApp:
         if self.busy or self.closing:
             return
         self.busy = True
+        self.network_job = True
+        self.checking_session = True
+        self.connected = False
         self.update_controls()
         self.bar.configure(mode='indeterminate')
         self.bar.start(12)
@@ -84,6 +95,7 @@ class MoodleApp:
         if self.busy:
             return
         self.courses = []
+        self.all_courses = []
         self.course_combo.set('')
         self.course_combo.configure(values=())
         self.show_sections([])
@@ -93,6 +105,7 @@ class MoodleApp:
 
     def clear_selection(self):
         self.courses = []
+        self.all_courses = []
         self.course_combo.set('')
         self.course_combo.configure(values=())
         self.show_sections([])
@@ -134,6 +147,19 @@ class MoodleApp:
         self.status.set('Leyendo las secciones del curso…')
         self.begin('sections', self.courses[index])
 
+    def filter_courses(self, event=None):
+        self.courses = [course for course in self.all_courses
+                        if self.course_filter.get() == 'Todos' or course.is_favorite]
+        self.course_combo.set('')
+        self.course_combo.configure(values=[course.name for course in self.courses])
+        self.show_sections([])
+        if self.courses:
+            self.status.set('Elegí un curso.')
+        elif self.course_filter.get() == 'Destacados':
+            self.status.set('No se encontraron cursos destacados. Elegí “Todos” para ver los cursos disponibles.')
+        else:
+            self.status.set('No se encontraron cursos.')
+
     def show_sections(self, sections):
         for child in self.section_frame.winfo_children():
             child.destroy()
@@ -171,6 +197,9 @@ class MoodleApp:
 
     def append_log(self, text):
         self.log.configure(state='normal')
+        if not self.has_log_entries:
+            self.log.delete('1.0', 'end')
+            self.has_log_entries = True
         self.log.insert('end', text + '\n')
         self.log.see('end')
         self.log.configure(state='disabled')
@@ -198,7 +227,9 @@ class MoodleApp:
             self.connected = False
             self.status.set('Inicio cancelado. La sesión guardada no se modificó.')
         elif kind == 'session':
+            self.checking_session = False
             self.connected = True
+            self.append_log('[SESIÓN] ' + payload)
             self.update_controls()
         elif kind == 'progress':
             if payload.startswith(('[DOWNLOAD]', '[DOCX]', '[ASSIGN]')):
@@ -207,17 +238,20 @@ class MoodleApp:
             self.append_log(payload)
         elif kind == 'error':
             session_error, message = payload
+            self.checking_session = False
+            if self.network_job:
+                self.connected = False
             if session_error:
                 self.connected = False
                 self.clear_selection()
             self.status.set('La sesión venció. Iniciá sesión nuevamente.' if session_error else 'Error · No se pudo completar la operación. Ver detalles.')
             self.append_log('[ERROR] ' + message)
+            self.update_controls()
         elif kind == 'result':
             action, result = payload
             if action == 'courses':
-                self.courses = result
-                self.course_combo.configure(values=[course.name for course in result])
-                self.status.set('Elegí un curso.' if result else 'No se encontraron cursos.')
+                self.all_courses = result
+                self.filter_courses()
             elif action == 'sections':
                 self.show_sections(result)
                 self.status.set('Marcá las secciones que querés descargar.' if result else 'El curso no muestra secciones.')
@@ -232,6 +266,8 @@ class MoodleApp:
                 self.append_log(f'[CARPETA] {result.directory}')
                 self.refresh_tree()
         elif kind == 'done':
+            self.network_job = False
+            self.checking_session = False
             self.busy = False
             self.login_active = self.login_ready = False
             self.bar.stop()

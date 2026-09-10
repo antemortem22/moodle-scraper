@@ -6,13 +6,26 @@ from queue import Queue
 from threading import Event
 from unittest.mock import MagicMock, patch
 
-from models import Section
+from models import Course, Section
 from scraper.errors import SessionError
 from ui.app import MoodleApp
 from ui.worker import run_job, run_login, save_session
 
 
 class WorkerTests(unittest.TestCase):
+    def setUp(self):
+        verifier = patch('ui.worker.verify_session')
+        verifier.start()
+        self.addCleanup(verifier.stop)
+
+    def test_expired_session_after_read_does_not_publish_connected(self):
+        events = Queue()
+        with patch('ui.worker.open_moodle', return_value=MagicMock()), patch('ui.worker.get_courses', return_value=[]), patch('ui.worker.verify_session', side_effect=SessionError('Sesión vencida')):
+            run_job(events, 'courses')
+        self.assertEqual(events.get_nowait(), ('error', (True, 'Sesión vencida')))
+        self.assertEqual(events.get_nowait(), ('done', None))
+        self.assertTrue(events.empty())
+
     def test_session_failure_always_finishes(self):
         events = Queue()
         with patch('ui.worker.open_moodle', side_effect=SessionError('Sesión expirada')):
@@ -165,14 +178,38 @@ class WindowTests(unittest.TestCase):
             open_file.assert_called_once_with(file.resolve())
 
     def test_details_and_connected_state(self):
+        self.assertIn('Todavía no hay operaciones', self.app.log.get('1.0', 'end'))
         self.assertFalse(self.app.details_visible)
         self.app.toggle_details()
         self.assertTrue(self.app.details_visible)
         self.app.toggle_details()
         self.assertFalse(self.app.details_visible)
         self.app.handle('session','verificada')
+        self.assertNotIn('Todavía no hay operaciones', self.app.log.get('1.0', 'end'))
+        self.assertIn('[SESIÓN] verificada', self.app.log.get('1.0', 'end'))
         self.assertEqual(self.app.session.get(),'● Conectada')
         self.assertEqual(self.app.login_button.cget('text'),'Renovar sesión')
+
+    def test_course_filter_default_empty_and_refresh(self):
+        favorite = Course(1, 'Favorito', 'url', True)
+        normal = Course(2, 'Normal', 'url')
+        self.app.handle('result', ('courses', [favorite, normal]))
+        self.assertEqual(self.app.course_filter.get(), 'Destacados')
+        self.assertEqual(self.app.courses, [favorite])
+        self.app.course_filter.set('Todos')
+        self.app.filter_courses()
+        self.assertEqual(self.app.courses, [favorite, normal])
+        self.app.course_combo.current(1)
+        self.app.handle('result', ('courses', [normal]))
+        self.assertEqual(self.app.course_filter.get(), 'Todos')
+        self.assertEqual(self.app.course_combo.current(), -1)
+        self.assertEqual(self.app.courses, [normal])
+        self.app.course_filter.set('Destacados')
+        self.app.filter_courses()
+        self.assertEqual(self.app.courses, [])
+        self.assertIn('No se encontraron cursos destacados', self.app.status.get())
+        self.assertNotIn('disabled', self.app.filter_combo.state())
+        self.assertIn('disabled', self.app.course_combo.state())
 
     def test_local_delete_labels_confirmation_and_missing_file(self):
         course = Path(self.temp.name)/'Curso'

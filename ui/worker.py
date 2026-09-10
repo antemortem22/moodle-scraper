@@ -7,10 +7,19 @@ import tempfile
 from playwright.sync_api import sync_playwright
 
 from exporter.service import export_sections
-from scraper.browser import open_moodle, COURSES_URL, SESSION_FILE, navigate
+from scraper.browser import open_moodle, COURSES_URL, SESSION_FILE, navigate, check_session
 from scraper.courses import get_courses
 from scraper.errors import SessionError
 from scraper.sections import get_sections
+
+
+def verify_session(page):
+    """Confirma acceso actual al área privada, no sólo ausencia del formulario de login."""
+    navigate(page, COURSES_URL)
+    check_session(page)
+    # Verificado en el HTML real de esta instalación de Moodle.
+    if not page.locator('a[href*="/login/logout.php"]').count():
+        raise SessionError('No se pudo confirmar una sesión autenticada. Iniciá sesión nuevamente.')
 
 
 def run_job(events: Queue, action: str, course=None, sections=None):
@@ -26,6 +35,7 @@ def run_job(events: Queue, action: str, course=None, sections=None):
                                          progress=lambda text: events.put(('progress', text)))
             else:
                 raise ValueError('Operación desconocida.')
+            verify_session(page)
         events.put(('session', 'Sesión verificada'))
         events.put(('result', (action, result)))
     except Exception as exc:
@@ -70,6 +80,7 @@ def run_login(events, confirm, cancel):
                         try:
                             navigate(page, COURSES_URL)
                             courses = get_courses(page)
+                            verify_session(page)
                         except Exception as exc:
                             events.put(('login_retry', str(exc)))
                             continue
